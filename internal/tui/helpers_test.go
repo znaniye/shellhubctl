@@ -17,31 +17,31 @@ func TestOnlineLabel(t *testing.T) {
 	}
 }
 
-func TestPlatformLabel(t *testing.T) {
+func TestOSLabel(t *testing.T) {
 	tests := []struct {
 		name string
 		info shellhub.DeviceInfo
 		want string
 	}{
 		{
-			name: "platform and arch",
-			info: shellhub.DeviceInfo{Platform: "linux", Arch: "arm64"},
-			want: "linux · arm64",
+			name: "pretty name and arch",
+			info: shellhub.DeviceInfo{PrettyName: "Ubuntu 22.04.3 LTS", Arch: "arm64"},
+			want: "Ubuntu 22.04.3 LTS · arm64",
 		},
 		{
-			name: "platform only",
-			info: shellhub.DeviceInfo{Platform: "linux"},
-			want: "linux",
+			name: "pretty name only",
+			info: shellhub.DeviceInfo{PrettyName: "NixOS 24.05 (Uakari)"},
+			want: "NixOS 24.05 (Uakari)",
 		},
 		{
-			name: "pretty name fallback",
-			info: shellhub.DeviceInfo{PrettyName: "Raspberry Pi", Arch: "armv7"},
-			want: "Raspberry Pi · armv7",
+			name: "id fallback with arch",
+			info: shellhub.DeviceInfo{ID: "debian", Arch: "arm64"},
+			want: "debian · arm64",
 		},
 		{
 			name: "unknown arch dropped",
-			info: shellhub.DeviceInfo{Platform: "linux", Arch: "unknown"},
-			want: "linux",
+			info: shellhub.DeviceInfo{PrettyName: "Raspberry Pi OS", Arch: "unknown"},
+			want: "Raspberry Pi OS",
 		},
 		{
 			name: "nothing known",
@@ -52,8 +52,8 @@ func TestPlatformLabel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := platformLabel(tt.info); got != tt.want {
-				t.Errorf("platformLabel(%+v) = %q, want %q", tt.info, got, tt.want)
+			if got := osLabel(tt.info); got != tt.want {
+				t.Errorf("osLabel(%+v) = %q, want %q", tt.info, got, tt.want)
 			}
 		})
 	}
@@ -95,7 +95,7 @@ func TestDeviceRow(t *testing.T) {
 		Name:   "raspberry",
 		Status: "accepted",
 		Online: true,
-		Info:   shellhub.DeviceInfo{Platform: "linux", Arch: "arm64"},
+		Info:   shellhub.DeviceInfo{PrettyName: "Raspberry Pi OS", Arch: "arm64"},
 	}
 
 	row := deviceRow(d)
@@ -103,7 +103,7 @@ func TestDeviceRow(t *testing.T) {
 		t.Fatalf("deviceRow returned %d cells, want 5", len(row))
 	}
 
-	want := []string{"raspberry", "accepted", "yes", "linux · arm64", "never"}
+	want := []string{"raspberry", "accepted", "yes", "Raspberry Pi OS · arm64", "never"}
 	for i := range want {
 		if row[i] != want[i] {
 			t.Errorf("row[%d] = %q, want %q", i, row[i], want[i])

@@ -215,3 +215,163 @@ func TestTableFitsTheAvailableHeight(t *testing.T) {
 		}
 	}
 }
+
+func devicesWithOS(t *testing.T) model {
+	t.Helper()
+
+	m := layoutModel(t, screenDevices)
+	m.devices.setDevices([]shellhub.Device{
+		{UID: "d-1", Name: "dev1", Status: "accepted", Online: true, Info: shellhub.DeviceInfo{
+			PrettyName: "Ubuntu 22.04.3 LTS", Arch: "x86_64",
+		}},
+		{UID: "d-2", Name: "dev2", Status: "accepted", Info: shellhub.DeviceInfo{
+			PrettyName: "NixOS 24.05 (Uakari)", Arch: "aarch64",
+		}},
+	}, 2)
+
+	return m
+}
+
+func TestOSColumnGrowsWithTheScreen(t *testing.T) {
+	m := devicesWithOS(t)
+
+	want := m.devices.cellWidth(osColumn)
+
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 60, Height: 24})
+	narrow := m.devices.columns()[osColumn].Width
+
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 160, Height: 24})
+	wide := m.devices.columns()[osColumn].Width
+
+	if narrow >= wide {
+		t.Errorf("OS column stayed at %d columns from 60 to %d, want it to grow", narrow, wide)
+	}
+
+	if wide != want {
+		t.Errorf("OS column = %d at 160 columns, want %d to fit the longest label", wide, want)
+	}
+
+	if strings.Contains(stripANSI(m.devices.table.View()), "…") {
+		t.Error("OS label is still truncated with room to spare")
+	}
+}
+
+func TestTableSpansTheWidthWhateverTheContent(t *testing.T) {
+	m := devicesWithOS(t)
+
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 1, Height: 24})
+
+	floor := 0
+	for _, col := range m.devices.columns() {
+		floor += col.Width + tableCellPadding
+	}
+
+	for _, width := range []int{floor, floor + 20, floor + 60, floor + 100} {
+		m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 24})
+
+		total := 0
+		for _, col := range m.devices.columns() {
+			total += col.Width + tableCellPadding
+		}
+
+		if total != width {
+			t.Errorf("width %d: columns span %d, want %d", width, total, width)
+		}
+
+		header := stripANSI(strings.Split(m.devices.table.View(), "\n")[0])
+		if got := utf8.RuneCountInString(header); got != width {
+			t.Errorf("width %d: header spans %d columns", width, got)
+		}
+	}
+
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: floor - 20, Height: 24})
+
+	for i, line := range strings.Split(m.View(), "\n") {
+		if got := utf8.RuneCountInString(stripANSI(line)); got > floor-20 {
+			t.Errorf("below the floor, line %d spans %d columns, want at most %d", i, got, floor-20)
+		}
+	}
+}
+
+func devicesWithOSLabel(t *testing.T, pretty, arch string) model {
+	t.Helper()
+
+	m := layoutModel(t, screenDevices)
+	m.devices.setDevices([]shellhub.Device{
+		{UID: "d-1", Name: "dev1", Status: "accepted", Online: true, Info: shellhub.DeviceInfo{
+			PrettyName: pretty, Arch: arch,
+		}},
+	}, 1)
+
+	return m
+}
+
+func TestOSColumnStaysAtTheDefaultWhenTheLabelFits(t *testing.T) {
+	m := devicesWithOSLabel(t, "Ubuntu", "x86_64")
+
+	for _, width := range []int{80, 120, 200} {
+		m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 24})
+
+		if got := m.devices.columns()[osColumn].Width; got != minOSWidth {
+			t.Errorf("width %d: OS column = %d, want it to stay at the %d default", width, got, minOSWidth)
+		}
+	}
+
+	if strings.Contains(stripANSI(m.devices.table.View()), "…") {
+		t.Error("a label that fits was truncated")
+	}
+}
+
+func TestOSColumnStopsAtTheCap(t *testing.T) {
+	m := devicesWithOSLabel(t, strings.Repeat("distro ", 12), "x86_64")
+
+	for _, width := range []int{140, 200, 300} {
+		m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 24})
+
+		if got := m.devices.columns()[osColumn].Width; got != maxOSWidth {
+			t.Errorf("width %d: OS column = %d, want the %d cap", width, got, maxOSWidth)
+		}
+	}
+
+	if !strings.Contains(stripANSI(m.devices.table.View()), "…") {
+		t.Error("a label past the cap should stay truncated")
+	}
+}
+
+func TestFixedColumnsDoNotWasteWidth(t *testing.T) {
+	m := devicesWithOS(t)
+
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 160, Height: 24})
+
+	for i, col := range m.devices.columns() {
+		if i == nameColumn || i == osColumn {
+			continue
+		}
+
+		want := max(lipgloss.Width(col.Title), m.devices.cellWidth(i))
+		if col.Width != want {
+			t.Errorf("%s is %d wide, want %d so it holds its content and no more", col.Title, col.Width, want)
+		}
+	}
+}
+
+func TestLastColumnEndsAtTheRightEdge(t *testing.T) {
+	m := devicesWithOS(t)
+
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
+
+	cols := m.devices.columns()
+	last := cols[len(cols)-1]
+
+	widest := max(lipgloss.Width(last.Title), m.devices.cellWidth(len(cols)-1))
+	if slack := last.Width - widest; slack != 0 {
+		t.Errorf("%s leaves %d unused columns before the right edge", last.Title, slack)
+	}
+
+	rows := strings.Split(stripANSI(m.devices.table.View()), "\n")
+	for i, row := range rows {
+		if got := utf8.RuneCountInString(row); got != 120 {
+			t.Errorf("row %d spans %d columns, want 120", i, got)
+		}
+	}
+}

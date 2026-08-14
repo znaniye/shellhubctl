@@ -19,7 +19,12 @@ import (
 const (
 	minTableHeight   = 3
 	minNameWidth     = 12
+	minOSWidth       = 20
+	maxOSWidth       = 50
 	tableCellPadding = 2
+
+	nameColumn = 0
+	osColumn   = 3
 )
 
 type devicesModel struct {
@@ -31,6 +36,8 @@ type devicesModel struct {
 	table   table.Model
 	spinner spinner.Model
 	help    help.Model
+
+	devices []shellhub.Device
 
 	hasTable bool
 	loading  bool
@@ -67,6 +74,7 @@ func (m devicesModel) initCmd() tea.Cmd {
 
 func (m *devicesModel) setDevices(devices []shellhub.Device, total int) {
 	m.total = total
+	m.devices = devices
 	m.empty = len(devices) == 0
 	m.hasTable = false
 
@@ -92,13 +100,33 @@ func (m *devicesModel) setDevices(devices []shellhub.Device, total int) {
 	m.resize()
 }
 
+func (m devicesModel) cellWidth(column int) int {
+	width := 0
+
+	for _, d := range m.devices {
+		if got := lipgloss.Width(deviceRow(d)[column]); got > width {
+			width = got
+		}
+	}
+
+	return width
+}
+
 func (m devicesModel) columns() []table.Column {
 	cols := []table.Column{
 		{Title: "NAME", Width: minNameWidth},
-		{Title: "STATUS", Width: 10},
-		{Title: "ONLINE", Width: 8},
-		{Title: "PLATFORM", Width: 20},
-		{Title: "LAST SEEN", Width: 16},
+		{Title: "STATUS"},
+		{Title: "ONLINE"},
+		{Title: "OS", Width: minOSWidth},
+		{Title: "LAST SEEN"},
+	}
+
+	for i, col := range cols {
+		if i == nameColumn || i == osColumn {
+			continue
+		}
+
+		cols[i].Width = max(lipgloss.Width(col.Title), m.cellWidth(i))
 	}
 
 	fixed := tableCellPadding
@@ -106,9 +134,21 @@ func (m devicesModel) columns() []table.Column {
 		fixed += col.Width + tableCellPadding
 	}
 
-	if name := m.width - fixed; name > minNameWidth {
-		cols[0].Width = name
+	surplus := m.width - fixed - minNameWidth
+	if surplus <= 0 {
+		return cols
 	}
+
+	nameWant := max(0, m.cellWidth(nameColumn)-minNameWidth)
+	osWant := max(0, min(m.cellWidth(osColumn), maxOSWidth)-minOSWidth)
+
+	osGrow := osWant
+	if total := nameWant + osWant; total > surplus {
+		osGrow = surplus * osWant / total
+	}
+
+	cols[osColumn].Width += osGrow
+	cols[nameColumn].Width = m.width - fixed - osGrow
 
 	return cols
 }
@@ -249,7 +289,7 @@ func deviceRow(d shellhub.Device) table.Row {
 		d.Name,
 		d.Status,
 		onlineLabel(d.Online),
-		platformLabel(d.Info),
+		osLabel(d.Info),
 		formatLastSeen(d.LastSeen),
 	}
 }
@@ -266,21 +306,21 @@ func onlineLabel(online bool) string {
 	return "no"
 }
 
-func platformLabel(info shellhub.DeviceInfo) string {
-	platform := info.Platform
-	if platform == "" {
-		platform = info.PrettyName
+func osLabel(info shellhub.DeviceInfo) string {
+	name := info.PrettyName
+	if name == "" {
+		name = info.ID
 	}
 
-	if platform == "" {
+	if name == "" {
 		return "-"
 	}
 
 	if info.Arch != "" && info.Arch != "unknown" {
-		return platform + " · " + info.Arch
+		return name + " · " + info.Arch
 	}
 
-	return platform
+	return name
 }
 
 func formatLastSeen(t time.Time) string {
