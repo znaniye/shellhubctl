@@ -54,6 +54,10 @@ func (c *Client) Server() string {
 	return c.base.String()
 }
 
+func (c *Client) Host() string {
+	return c.base.Hostname()
+}
+
 type response struct {
 	status int
 	header http.Header

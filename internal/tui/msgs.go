@@ -30,6 +30,10 @@ type devicesLoadedMsg struct {
 	total   int
 }
 
+type sshExitedMsg struct {
+	err error
+}
+
 type backMsg struct{}
 
 func back() tea.Msg {

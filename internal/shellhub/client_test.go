@@ -612,3 +612,27 @@ func TestSwitchNamespace(t *testing.T) {
 		t.Errorf("auth = %+v", auth)
 	}
 }
+
+func TestHostDropsTheAPIPort(t *testing.T) {
+	tests := []struct {
+		server string
+		want   string
+	}{
+		{server: "https://cloud.shellhub.io", want: "cloud.shellhub.io"},
+		{server: "http://localhost", want: "localhost"},
+		{server: "http://localhost:8080", want: "localhost"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.server, func(t *testing.T) {
+			c, err := New(tt.server)
+			if err != nil {
+				t.Fatalf("New(%q): %v", tt.server, err)
+			}
+
+			if got := c.Host(); got != tt.want {
+				t.Errorf("Host() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

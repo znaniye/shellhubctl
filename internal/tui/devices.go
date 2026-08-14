@@ -9,11 +9,13 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/znaniye/shellhub-tui/internal/auth"
 	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhub-tui/internal/ssh"
 )
 
 const (
@@ -38,6 +40,13 @@ type devicesModel struct {
 	help    help.Model
 
 	devices []shellhub.Device
+
+	userInput textinput.Model
+
+	prompting  bool
+	connErr    string
+	connDevice shellhub.Device
+	lastUser   string
 
 	hasTable bool
 	loading  bool
@@ -178,6 +187,10 @@ func (m devicesModel) tableHeight() int {
 		lipgloss.Height(m.countView()) -
 		lipgloss.Height(m.footerView())
 
+	if notice := m.noticeView(); notice != "" {
+		height -= lipgloss.Height(notice)
+	}
+
 	if height < minTableHeight {
 		return minTableHeight
 	}
@@ -216,12 +229,33 @@ func (m *devicesModel) Update(msg tea.Msg) (devicesModel, tea.Cmd) {
 			return *m, nil
 		}
 
+		if m.prompting {
+			return m.promptUpdate(msg)
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return *m, tea.Quit
 		case "esc":
 			return *m, back
+		case "enter":
+			m.setConnErr("")
+
+			if m.hasTable && m.table.Cursor() >= 0 && m.table.Cursor() < len(m.devices) {
+				dev := m.devices[m.table.Cursor()]
+				if !dev.Online {
+					m.setConnErr("device " + dev.Name + " is offline")
+
+					return *m, nil
+				}
+
+				m.connectTo(dev)
+			}
+
+			return *m, nil
 		case "r":
+			m.setConnErr("")
+
 			return *m, m.reload()
 		case "?":
 			m.help.ShowAll = !m.help.ShowAll
@@ -244,6 +278,14 @@ func (m *devicesModel) Update(msg tea.Msg) (devicesModel, tea.Cmd) {
 		m.err = msg.err.Error()
 
 		return *m, nil
+	case sshExitedMsg:
+		m.prompting = false
+
+		if err := sshExitError(msg.err); err != "" {
+			m.setConnErr(err)
+		}
+
+		return *m, nil
 	case devicesLoadedMsg:
 		m.loading = false
 		m.err = ""
@@ -263,25 +305,122 @@ func (m *devicesModel) Update(msg tea.Msg) (devicesModel, tea.Cmd) {
 	return *m, nil
 }
 
-func (m devicesModel) View() string {
-	var body string
+func (m *devicesModel) setConnErr(err string) {
+	m.connErr = err
 
-	switch {
-	case m.loading:
-		body = m.spinner.View() + " loading devices…"
-	case m.err != "":
-		body = errorStyle.Render(m.err) + "\n\n" +
-			hintStyle.Render("press r to retry, esc to go back or q to quit")
-	case m.empty:
-		body = infoStyle.Render("no accepted device in this namespace.") + "\n\n" +
-			hintStyle.Render("press esc to go back or q to quit")
-	case m.hasTable:
-		body = m.table.View() + "\n" + m.countView()
+	m.resize()
+}
+
+func (m *devicesModel) connectTo(dev shellhub.Device) {
+	m.setConnErr("")
+	m.connDevice = dev
+
+	m.beginPrompt()
+}
+
+func (m *devicesModel) beginPrompt() {
+	input := textinput.New()
+	input.Placeholder = "root"
+	input.CharLimit = 64
+
+	user := m.lastUser
+	if user == "" {
+		user = "root"
 	}
 
-	content := strings.Join([]string{m.headerView(), body}, "\n")
+	input.SetValue(user)
+	input.Focus()
+
+	m.userInput = input
+	m.prompting = true
+}
+
+func (m *devicesModel) promptUpdate(msg tea.KeyMsg) (devicesModel, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		user := strings.TrimSpace(m.userInput.Value())
+		if user == "" {
+			return *m, nil
+		}
+
+		m.lastUser = user
+		m.prompting = false
+
+		cfg := ssh.Config{
+			User:      user,
+			Namespace: m.nsName,
+			Device:    m.connDevice.Name,
+			Host:      m.client.Host(),
+		}
+
+		if err := cfg.Validate(); err != nil {
+			m.setConnErr(err.Error())
+
+			return *m, nil
+		}
+
+		return *m, sshConnectCmd(m.ctx, cfg)
+	case "esc":
+		m.prompting = false
+
+		return *m, nil
+	case "ctrl+c":
+		return *m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+
+	m.userInput, cmd = m.userInput.Update(msg)
+
+	return *m, cmd
+}
+
+func (m devicesModel) View() string {
+	var content string
+
+	switch {
+	case m.prompting:
+		content = m.connectView()
+	default:
+		var body string
+
+		switch {
+		case m.loading:
+			body = m.spinner.View() + " loading devices…"
+		case m.err != "":
+			body = errorStyle.Render(m.err) + "\n\n" +
+				hintStyle.Render("press r to retry, esc to go back or q to quit")
+		case m.empty:
+			body = infoStyle.Render("no accepted device in this namespace.") + "\n\n" +
+				hintStyle.Render("press esc to go back or q to quit")
+		case m.hasTable:
+			body = m.table.View() + "\n" + m.countView() + m.noticeView()
+		}
+
+		content = strings.Join([]string{m.headerView(), body}, "\n")
+	}
 
 	return frame(content, m.footerView(), m.width, m.height)
+}
+
+func (m devicesModel) connectView() string {
+	return strings.Join([]string{
+		titleStyle.Render("connect to " + m.connDevice.Name),
+		subtitleStyle.Render("namespace " + m.nsName),
+		"",
+		"OS user on the device:",
+		m.userInput.View(),
+		"",
+		hintStyle.Render("enter to connect · esc to cancel"),
+	}, "\n")
+}
+
+func (m devicesModel) noticeView() string {
+	if m.connErr == "" {
+		return ""
+	}
+
+	return "\n" + errorStyle.Render(m.connErr)
 }
 
 func deviceRow(d shellhub.Device) table.Row {
