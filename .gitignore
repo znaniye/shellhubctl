@@ -1,0 +1,16 @@
+# direnv
+.direnv/
+.envrc.local
+
+# nix
+result
+result-*
+
+# go
+/dist/
+*.test
+coverage.out
+
+# editors
+.idea/
+.vscode/
