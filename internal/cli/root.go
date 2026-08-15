@@ -18,7 +18,7 @@ var version = "dev"
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "shellhubctl",
-		Short:         "Terminal UI for ShellHub",
+		Short:         "Terminal UI and JSON CLI for ShellHub",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -62,6 +62,7 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().String("server", "", "ShellHub server URL (default $SHELLHUB_URL, then https://cloud.shellhub.io)")
 
 	cmd.AddCommand(newLogoutCmd())
+	cmd.AddCommand(newDevicesCmd())
 
 	return cmd
 }
