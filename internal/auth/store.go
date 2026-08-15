@@ -25,7 +25,7 @@ func NewStore() (*Store, error) {
 		dir = filepath.Join(home, ".config")
 	}
 
-	return NewStoreAt(filepath.Join(dir, "shellhub-tui", "session.json")), nil
+	return NewStoreAt(filepath.Join(dir, "shellhubctl", "session.json")), nil
 }
 
 func NewStoreAt(path string) *Store {

@@ -4,7 +4,7 @@
   ...
 }:
 pkgs.buildGoModule {
-  pname = "shellhub-tui";
+  pname = "shellhubctl";
   version = "0.1.0";
 
   src = flake;
@@ -20,6 +20,6 @@ pkgs.buildGoModule {
 
   meta = {
     description = "Terminal UI for ShellHub";
-    mainProgram = "shellhub-tui";
+    mainProgram = "shellhubctl";
   };
 }

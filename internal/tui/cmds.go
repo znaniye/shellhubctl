@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/znaniye/shellhub-tui/internal/auth"
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/auth"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
 func listNamespacesCmd(ctx context.Context, c *shellhub.Client) tea.Cmd {

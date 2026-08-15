@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
 func loginServer(t *testing.T, handler http.HandlerFunc) *shellhub.Client {

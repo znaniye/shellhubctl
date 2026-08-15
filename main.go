@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/znaniye/shellhub-tui/internal/cli"
+	"github.com/znaniye/shellhubctl/internal/cli"
 )
 
 func main() {

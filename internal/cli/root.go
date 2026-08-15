@@ -8,16 +8,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/znaniye/shellhub-tui/internal/auth"
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
-	"github.com/znaniye/shellhub-tui/internal/tui"
+	"github.com/znaniye/shellhubctl/internal/auth"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/tui"
 )
 
 var version = "dev"
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           "shellhub-tui",
+		Use:           "shellhubctl",
 		Short:         "Terminal UI for ShellHub",
 		Version:       version,
 		SilenceUsage:  true,

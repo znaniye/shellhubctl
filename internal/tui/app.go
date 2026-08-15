@@ -8,8 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/znaniye/shellhub-tui/internal/auth"
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/auth"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
 type Options struct {

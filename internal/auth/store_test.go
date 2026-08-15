@@ -170,7 +170,7 @@ func TestNewStoreDefaultPath(t *testing.T) {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 
-	want := filepath.Join(base, "xdg", "shellhub-tui", "session.json")
+	want := filepath.Join(base, "xdg", "shellhubctl", "session.json")
 	if store.Path() != want {
 		t.Errorf("Path() = %q, want %q", store.Path(), want)
 	}
@@ -186,7 +186,7 @@ func TestNewStoreFallsBackToHome(t *testing.T) {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 
-	want := filepath.Join(base, "home", ".config", "shellhub-tui", "session.json")
+	want := filepath.Join(base, "home", ".config", "shellhubctl", "session.json")
 	if store.Path() != want {
 		t.Errorf("Path() = %q, want %q", store.Path(), want)
 	}

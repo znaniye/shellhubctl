@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/znaniye/shellhub-tui/internal/ssh"
+	"github.com/znaniye/shellhubctl/internal/ssh"
 )
 
 func sshConnectCmd(ctx context.Context, target ssh.Config) tea.Cmd {

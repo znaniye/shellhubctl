@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/znaniye/shellhub-tui/internal/auth"
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/auth"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
 type loginModel struct {
@@ -172,7 +172,7 @@ func (m *loginModel) Update(msg tea.Msg) (loginModel, tea.Cmd) {
 
 func (m loginModel) headerView() string {
 	return strings.Join([]string{
-		titleStyle.Render("shellhub-tui"),
+		titleStyle.Render("shellhubctl"),
 		subtitleStyle.Render("sign in with your ShellHub account"),
 		"",
 	}, "\n")

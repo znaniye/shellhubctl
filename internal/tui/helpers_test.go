@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
 func TestOnlineLabel(t *testing.T) {

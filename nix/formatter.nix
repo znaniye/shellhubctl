@@ -20,5 +20,5 @@ pkgs.writeShellApplication {
     gofumpt -l -w "$@"
   '';
 
-  meta.description = "format the shellhub-tui project (nix + go)";
+  meta.description = "format the shellhubctl project (nix + go)";
 }

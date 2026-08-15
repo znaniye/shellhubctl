@@ -1,5 +1,5 @@
 {
-  description = "shellhub-tui — a terminal UI for ShellHub";
+  description = "shellhubctl — a terminal UI for ShellHub";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-unstable";

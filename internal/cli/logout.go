@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/znaniye/shellhub-tui/internal/auth"
+	"github.com/znaniye/shellhubctl/internal/auth"
 )
 
 func newLogoutCmd() *cobra.Command {

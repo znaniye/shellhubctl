@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
 type LoginFailure struct {

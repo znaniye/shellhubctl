@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
 func TestDeviceColumnsTitles(t *testing.T) {

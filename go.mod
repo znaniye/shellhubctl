@@ -1,4 +1,4 @@
-module github.com/znaniye/shellhub-tui
+module github.com/znaniye/shellhubctl
 
 go 1.26.5
 

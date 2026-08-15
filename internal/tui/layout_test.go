@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/znaniye/shellhub-tui/internal/shellhub"
+	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
 var ansiPattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
@@ -119,7 +119,7 @@ func TestViewFillsTheScreenAndAnchorsHelp(t *testing.T) {
 		screen screen
 		title  string
 	}{
-		{name: "login", screen: screenLogin, title: "shellhub-tui"},
+		{name: "login", screen: screenLogin, title: "shellhubctl"},
 		{name: "namespaces", screen: screenNamespaces, title: "namespaces"},
 		{name: "devices", screen: screenDevices, title: "devices"},
 	}
