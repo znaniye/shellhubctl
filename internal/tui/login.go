@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -15,24 +13,17 @@ import (
 )
 
 type loginModel struct {
-	ctx    context.Context
-	client *shellhub.Client
-	store  *auth.Store
+	pctx *ProgramContext
 
 	identifier textinput.Model
 	password   textinput.Model
-	spinner    spinner.Model
-	help       help.Model
 
 	focused int
 	loading bool
 	err     string
-
-	width  int
-	height int
 }
 
-func newLoginModel(ctx context.Context, c *shellhub.Client, store *auth.Store) loginModel {
+func newLoginModel(pctx *ProgramContext) loginModel {
 	identifier := textinput.New()
 	identifier.Placeholder = "username or email"
 	identifier.CharLimit = 128
@@ -42,21 +33,10 @@ func newLoginModel(ctx context.Context, c *shellhub.Client, store *auth.Store) l
 	password.EchoMode = textinput.EchoPassword
 	password.CharLimit = 128
 
-	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
-
-	h := help.New()
-	h.Width = defaultWidth
-
 	m := loginModel{
-		ctx:        ctx,
-		client:     c,
-		store:      store,
+		pctx:       pctx,
 		identifier: identifier,
 		password:   password,
-		spinner:    sp,
-		help:       h,
-		width:      defaultWidth,
-		height:     defaultHeight,
 	}
 	m.focus()
 
@@ -109,11 +89,6 @@ func (m loginModel) initCmd() tea.Cmd {
 
 func (m *loginModel) Update(msg tea.Msg) (loginModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		m.help.Width = msg.Width
-
-		return *m, nil
 	case tea.KeyMsg:
 		if m.loading {
 			return *m, nil
@@ -138,20 +113,10 @@ func (m *loginModel) Update(msg tea.Msg) (loginModel, tea.Cmd) {
 			m.loading = true
 			m.err = ""
 
-			return *m, tea.Batch(
-				loginCmd(m.ctx, m.client, m.store, m.identifier.Value(), m.password.Value()),
-				m.spinner.Tick,
+			return *m, loginCmd(
+				m.pctx.Ctx, m.pctx.Client, m.pctx.Store, m.identifier.Value(), m.password.Value(),
 			)
 		}
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-
-		m.spinner, cmd = m.spinner.Update(msg)
-		if !m.loading {
-			return *m, nil
-		}
-
-		return *m, cmd
 	case errMsg:
 		m.loading = false
 		m.err = msg.err.Error()
@@ -170,22 +135,7 @@ func (m *loginModel) Update(msg tea.Msg) (loginModel, tea.Cmd) {
 	return *m, cmd
 }
 
-func (m loginModel) headerView() string {
-	return strings.Join([]string{
-		titleStyle.Render("shellhubctl"),
-		subtitleStyle.Render("sign in with your ShellHub account"),
-		"",
-	}, "\n")
-}
-
-func (m loginModel) footerView() string {
-	return strings.Join([]string{
-		"",
-		m.help.View(loginKeys),
-	}, "\n")
-}
-
-func (m loginModel) View() string {
+func (m loginModel) body(spinner string) string {
 	var body strings.Builder
 
 	body.WriteString(m.identifier.View())
@@ -194,16 +144,14 @@ func (m loginModel) View() string {
 
 	if m.loading {
 		body.WriteString("\n\n")
-		body.WriteString(m.spinner.View())
+		body.WriteString(spinner)
 		body.WriteString(" authenticating…")
 	}
 
 	if m.err != "" {
 		body.WriteString("\n\n")
-		body.WriteString(errorStyle.Render(m.err))
+		body.WriteString(m.pctx.Styles.Error.Render(m.err))
 	}
 
-	content := strings.Join([]string{m.headerView(), body.String()}, "\n")
-
-	return frame(content, m.footerView(), m.width, m.height)
+	return body.String()
 }

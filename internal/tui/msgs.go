@@ -1,8 +1,6 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/znaniye/shellhubctl/internal/auth"
 	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
@@ -32,10 +30,4 @@ type devicesLoadedMsg struct {
 
 type sshExitedMsg struct {
 	err error
-}
-
-type backMsg struct{}
-
-func back() tea.Msg {
-	return backMsg{}
 }

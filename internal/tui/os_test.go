@@ -1,13 +1,21 @@
 package tui
 
 import (
+	"context"
 	"testing"
 
 	"github.com/znaniye/shellhubctl/internal/shellhub"
 )
 
+func devicesAtWidth(width int) devicesModel {
+	pctx := newProgramContext(context.Background(), Options{})
+	pctx.SetSize(width, defaultHeight)
+
+	return devicesModel{pctx: pctx}
+}
+
 func TestDeviceColumnsTitles(t *testing.T) {
-	m := devicesModel{width: 100}
+	m := devicesAtWidth(100)
 
 	want := []string{"NAME", "STATUS", "ONLINE", "OS", "LAST SEEN"}
 
@@ -24,7 +32,7 @@ func TestDeviceColumnsTitles(t *testing.T) {
 }
 
 func TestNameColumnGetsTheLeftoverWidth(t *testing.T) {
-	wide := devicesModel{width: 120}
+	wide := devicesAtWidth(120)
 
 	cols := wide.columns()
 
@@ -33,11 +41,11 @@ func TestNameColumnGetsTheLeftoverWidth(t *testing.T) {
 		fixed += col.Width + tableCellPadding
 	}
 
-	if want := wide.width - fixed; cols[0].Width != want {
+	if want := wide.pctx.MainContentWidth - fixed; cols[0].Width != want {
 		t.Errorf("NAME width = %d, want the leftover %d", cols[0].Width, want)
 	}
 
-	narrow := devicesModel{width: 30}
+	narrow := devicesAtWidth(30)
 
 	if got := narrow.columns()[0].Width; got != minNameWidth {
 		t.Errorf("narrow NAME width = %d, want the %d floor", got, minNameWidth)

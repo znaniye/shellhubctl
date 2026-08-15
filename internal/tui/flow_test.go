@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -175,9 +176,55 @@ func TestModelLoginFlow(t *testing.T) {
 		t.Errorf("stored token = %q, want %q", got.Token, token)
 	}
 
-	m, _ = updateModel(t, m, success)
-	if m.screen != screenNamespaces {
-		t.Fatalf("screen = %v, want namespaces", m.screen)
+	m, cmd = updateModel(t, m, success)
+	if m.screen != screenDashboard {
+		t.Fatalf("screen = %v, want dashboard", m.screen)
+	}
+
+	if !m.nsLoading {
+		t.Error("the dashboard should load the namespaces right after signing in")
+	}
+
+	if cmd == nil {
+		t.Fatal("expected the namespaces load command")
+	}
+}
+
+func sessionHandler(t *testing.T, token string, devicesAuth *string, mu *sync.Mutex) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.URL.Path == "/api/namespaces":
+			_, _ = w.Write([]byte(`[
+				{"name":"alpha","tenant_id":"t-1","devices_accepted_count":2},
+				{"name":"beta","tenant_id":"t-2","devices_accepted_count":7}
+			]`))
+		case strings.HasPrefix(r.URL.Path, "/api/auth/token/"):
+			body, err := json.Marshal(map[string]any{
+				"token": token, "user": "alice", "name": "Alice", "id": "u-1",
+				"tenant": strings.TrimPrefix(r.URL.Path, "/api/auth/token/"),
+				"email":  "alice@example.com",
+				"role":   "owner",
+				"mfa":    false,
+			})
+			if err != nil {
+				t.Errorf("marshal response: %v", err)
+
+				return
+			}
+
+			_, _ = w.Write(body)
+		case r.URL.Path == "/api/devices":
+			mu.Lock()
+			*devicesAuth = r.Header.Get("Authorization")
+			mu.Unlock()
+
+			w.Header().Set("X-Total-Count", "1")
+			_, _ = w.Write([]byte(`[{"uid":"d-1","name":"dev1","online":true,"status":"accepted","info":{"platform":"linux","arch":"arm64"}}]`))
+		}
 	}
 }
 
@@ -189,45 +236,16 @@ func TestModelValidSessionFlow(t *testing.T) {
 		devicesAuth string
 	)
 
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		switch r.URL.Path {
-		case "/api/namespaces":
-			_, _ = w.Write([]byte(`[{"name":"alpha","tenant_id":"t-1","devices_accepted_count":2}]`))
-		case "/api/auth/token/t-1":
-			body, err := json.Marshal(map[string]any{
-				"token": newToken, "user": "alice", "name": "Alice", "id": "u-1",
-				"tenant": "t-1", "email": "alice@example.com", "role": "owner", "mfa": false,
-			})
-			if err != nil {
-				t.Errorf("marshal response: %v", err)
-
-				return
-			}
-
-			_, _ = w.Write(body)
-		case "/api/devices":
-			mu.Lock()
-			devicesAuth = r.Header.Get("Authorization")
-			mu.Unlock()
-
-			w.Header().Set("X-Total-Count", "1")
-			_, _ = w.Write([]byte(`[{"uid":"d-1","name":"dev1","online":true,"status":"accepted","info":{"platform":"linux","arch":"arm64"}}]`))
-		}
-	}
-
-	oldToken := testToken(t, time.Now().Add(2*time.Hour))
 	sess := &auth.Session{
 		Server:    "http://placeholder",
-		Token:     oldToken,
+		Token:     testToken(t, time.Now().Add(2*time.Hour)),
 		Username:  "alice",
 		ExpiresAt: time.Now().Add(2 * time.Hour),
 	}
 
-	m, store := testModel(t, handler, sess)
-	if m.screen != screenNamespaces {
-		t.Fatalf("screen = %v, want namespaces", m.screen)
+	m, store := testModel(t, sessionHandler(t, newToken, &devicesAuth, &mu), sess)
+	if m.screen != screenDashboard {
+		t.Fatalf("screen = %v, want dashboard", m.screen)
 	}
 
 	msg := runMsg(t, m.Init())
@@ -237,18 +255,17 @@ func TestModelValidSessionFlow(t *testing.T) {
 		t.Fatalf("init cmd returned %T, want namespacesLoadedMsg", msg)
 	}
 
-	if len(loaded.namespaces) != 1 || loaded.namespaces[0].Name != "alpha" {
+	if len(loaded.namespaces) != 2 || loaded.namespaces[0].Name != "alpha" {
 		t.Errorf("namespaces = %+v", loaded.namespaces)
 	}
 
-	m, _ = updateModel(t, m, loaded)
-	if !m.namespaces.hasList {
-		t.Fatal("namespace list was not built")
+	m, cmd := updateModel(t, m, loaded)
+	if m.current != 0 || len(m.namespaces) != 2 {
+		t.Fatalf("current = %d of %d namespaces, want the first of two", m.current, len(m.namespaces))
 	}
 
-	m, cmd := updateModel(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
-		t.Fatal("enter: expected switch command")
+		t.Fatal("loading the namespaces should select the first one")
 	}
 
 	msg = runMsg(t, cmd)
@@ -272,10 +289,6 @@ func TestModelValidSessionFlow(t *testing.T) {
 	}
 
 	m, cmd = updateModel(t, m, switched)
-	if m.screen != screenDevices {
-		t.Fatalf("screen = %v, want devices", m.screen)
-	}
-
 	if cmd == nil {
 		t.Fatal("expected devices load command")
 	}
@@ -304,17 +317,24 @@ func TestModelValidSessionFlow(t *testing.T) {
 		t.Errorf("devices request Authorization = %q, want Bearer %s", gotAuth, newToken)
 	}
 
-	m, cmd = updateModel(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	m, cmd = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.current != 1 {
+		t.Fatalf("current = %d, want the second tab after right", m.current)
+	}
+
+	if !m.devices.loading {
+		t.Error("switching namespace should put the device table back into loading")
+	}
 
 	msg = runMsg(t, cmd)
 
-	if _, ok := msg.(backMsg); !ok {
-		t.Fatalf("esc cmd returned %T, want backMsg", msg)
+	switched, ok = msg.(namespaceSelectedMsg)
+	if !ok {
+		t.Fatalf("tab switch returned %T, want namespaceSelectedMsg", msg)
 	}
 
-	m, _ = updateModel(t, m, msg)
-	if m.screen != screenNamespaces {
-		t.Fatalf("screen = %v, want namespaces after esc", m.screen)
+	if switched.namespace.Name != "beta" || switched.session.Tenant != "t-2" {
+		t.Errorf("switched to %+v, want beta on t-2", switched.namespace)
 	}
 }
 
@@ -337,11 +357,11 @@ func TestModelNetworkErrorDoesNotCrash(t *testing.T) {
 
 	m, _ = updateModel(t, m, msg)
 
-	if m.namespaces.err == "" {
-		t.Fatal("namespaces screen did not record the error")
+	if m.nsErr == "" {
+		t.Fatal("the dashboard did not record the error")
 	}
 
-	if cmd := m.namespaces.reload(); cmd == nil {
+	if cmd := m.loadNamespaces(); cmd == nil {
 		t.Fatal("reload returned nil cmd")
 	}
 }

@@ -1,19 +1,15 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/znaniye/shellhubctl/internal/auth"
 	"github.com/znaniye/shellhubctl/internal/shellhub"
 	"github.com/znaniye/shellhubctl/internal/ssh"
 )
@@ -30,14 +26,10 @@ const (
 )
 
 type devicesModel struct {
-	ctx    context.Context
-	client *shellhub.Client
-	store  *auth.Store
+	pctx   *ProgramContext
 	nsName string
 
-	table   table.Model
-	spinner spinner.Model
-	help    help.Model
+	table table.Model
 
 	devices []shellhub.Device
 
@@ -53,32 +45,22 @@ type devicesModel struct {
 	empty    bool
 	err      string
 	total    int
-
-	width  int
-	height int
 }
 
-func newDevicesModel(ctx context.Context, c *shellhub.Client, store *auth.Store, nsName string, width, height int) devicesModel {
-	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
-
-	h := help.New()
-	h.Width = width
-
+func newDevicesModel(pctx *ProgramContext, nsName string) devicesModel {
 	return devicesModel{
-		ctx:     ctx,
-		client:  c,
-		store:   store,
+		pctx:    pctx,
 		nsName:  nsName,
-		spinner: sp,
-		help:    h,
 		loading: true,
-		width:   width,
-		height:  height,
 	}
 }
 
 func (m devicesModel) initCmd() tea.Cmd {
-	return tea.Batch(listDevicesCmd(m.ctx, m.client), m.spinner.Tick)
+	return listDevicesCmd(m.pctx.Ctx, m.pctx.Client)
+}
+
+func (m devicesModel) capturingInput() bool {
+	return m.prompting
 }
 
 func (m *devicesModel) setDevices(devices []shellhub.Device, total int) {
@@ -101,7 +83,7 @@ func (m *devicesModel) setDevices(devices []shellhub.Device, total int) {
 		table.WithRows(rows),
 		table.WithFocused(true),
 	)
-	t.SetStyles(tableStyles)
+	t.SetStyles(m.pctx.Styles.Table)
 
 	m.table = t
 	m.hasTable = true
@@ -143,7 +125,7 @@ func (m devicesModel) columns() []table.Column {
 		fixed += col.Width + tableCellPadding
 	}
 
-	surplus := m.width - fixed - minNameWidth
+	surplus := m.pctx.MainContentWidth - fixed - minNameWidth
 	if surplus <= 0 {
 		return cols
 	}
@@ -157,35 +139,17 @@ func (m devicesModel) columns() []table.Column {
 	}
 
 	cols[osColumn].Width += osGrow
-	cols[nameColumn].Width = m.width - fixed - osGrow
+	cols[nameColumn].Width = m.pctx.MainContentWidth - fixed - osGrow
 
 	return cols
 }
 
-func (m devicesModel) headerView() string {
-	return strings.Join([]string{
-		titleStyle.Render("devices"),
-		subtitleStyle.Render("namespace " + m.nsName + " · esc to go back"),
-		"",
-	}, "\n")
-}
-
 func (m devicesModel) countView() string {
-	return hintStyle.Render(deviceCountFooter(len(m.table.Rows()), m.total))
-}
-
-func (m devicesModel) footerView() string {
-	return strings.Join([]string{
-		"",
-		m.help.View(navKeys),
-	}, "\n")
+	return m.pctx.Styles.Hint.Render(deviceCountFooter(len(m.table.Rows()), m.total))
 }
 
 func (m devicesModel) tableHeight() int {
-	height := m.height -
-		lipgloss.Height(m.headerView()) -
-		lipgloss.Height(m.countView()) -
-		lipgloss.Height(m.footerView())
+	height := m.pctx.BodyHeight - lipgloss.Height(m.countView())
 
 	if notice := m.noticeView(); notice != "" {
 		height -= lipgloss.Height(notice)
@@ -204,7 +168,7 @@ func (m *devicesModel) resize() {
 	}
 
 	m.table.SetColumns(m.columns())
-	m.table.SetWidth(m.width)
+	m.table.SetWidth(m.pctx.MainContentWidth)
 	m.table.SetHeight(m.tableHeight())
 }
 
@@ -212,18 +176,11 @@ func (m *devicesModel) reload() tea.Cmd {
 	m.loading = true
 	m.err = ""
 
-	return tea.Batch(listDevicesCmd(m.ctx, m.client), m.spinner.Tick)
+	return listDevicesCmd(m.pctx.Ctx, m.pctx.Client)
 }
 
 func (m *devicesModel) Update(msg tea.Msg) (devicesModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		m.help.Width = msg.Width
-
-		m.resize()
-
-		return *m, nil
 	case tea.KeyMsg:
 		if m.loading {
 			return *m, nil
@@ -233,12 +190,7 @@ func (m *devicesModel) Update(msg tea.Msg) (devicesModel, tea.Cmd) {
 			return m.promptUpdate(msg)
 		}
 
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return *m, tea.Quit
-		case "esc":
-			return *m, back
-		case "enter":
+		if msg.String() == "enter" {
 			m.setConnErr("")
 
 			if m.hasTable && m.table.Cursor() >= 0 && m.table.Cursor() < len(m.devices) {
@@ -253,26 +205,7 @@ func (m *devicesModel) Update(msg tea.Msg) (devicesModel, tea.Cmd) {
 			}
 
 			return *m, nil
-		case "r":
-			m.setConnErr("")
-
-			return *m, m.reload()
-		case "?":
-			m.help.ShowAll = !m.help.ShowAll
-
-			m.resize()
-
-			return *m, nil
 		}
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-
-		m.spinner, cmd = m.spinner.Update(msg)
-		if !m.loading {
-			return *m, nil
-		}
-
-		return *m, cmd
 	case errMsg:
 		m.loading = false
 		m.err = msg.err.Error()
@@ -350,7 +283,7 @@ func (m *devicesModel) promptUpdate(msg tea.KeyMsg) (devicesModel, tea.Cmd) {
 			User:      user,
 			Namespace: m.nsName,
 			Device:    m.connDevice.Name,
-			Host:      m.client.Host(),
+			Host:      m.pctx.Client.Host(),
 		}
 
 		if err := cfg.Validate(); err != nil {
@@ -359,7 +292,7 @@ func (m *devicesModel) promptUpdate(msg tea.KeyMsg) (devicesModel, tea.Cmd) {
 			return *m, nil
 		}
 
-		return *m, sshConnectCmd(m.ctx, cfg)
+		return *m, sshConnectCmd(m.pctx.Ctx, cfg)
 	case "esc":
 		m.prompting = false
 
@@ -375,43 +308,32 @@ func (m *devicesModel) promptUpdate(msg tea.KeyMsg) (devicesModel, tea.Cmd) {
 	return *m, cmd
 }
 
-func (m devicesModel) View() string {
-	var content string
-
+func (m devicesModel) body(spinner string) string {
 	switch {
 	case m.prompting:
-		content = m.connectView()
-	default:
-		var body string
-
-		switch {
-		case m.loading:
-			body = m.spinner.View() + " loading devices…"
-		case m.err != "":
-			body = errorStyle.Render(m.err) + "\n\n" +
-				hintStyle.Render("press r to retry, esc to go back or q to quit")
-		case m.empty:
-			body = infoStyle.Render("no accepted device in this namespace.") + "\n\n" +
-				hintStyle.Render("press esc to go back or q to quit")
-		case m.hasTable:
-			body = m.table.View() + "\n" + m.countView() + m.noticeView()
-		}
-
-		content = strings.Join([]string{m.headerView(), body}, "\n")
+		return m.connectView()
+	case m.loading:
+		return spinner + " loading devices…"
+	case m.err != "":
+		return m.pctx.Styles.Error.Render(m.err) + "\n\n" +
+			m.pctx.Styles.Hint.Render("press r to retry or q to quit")
+	case m.empty:
+		return m.pctx.Styles.Info.Render("no accepted device in this namespace.") + "\n\n" +
+			m.pctx.Styles.Hint.Render("press ←/→ to change namespace or q to quit")
+	case m.hasTable:
+		return m.table.View() + "\n" + m.countView() + m.noticeView()
 	}
 
-	return frame(content, m.footerView(), m.width, m.height)
+	return ""
 }
 
 func (m devicesModel) connectView() string {
 	return strings.Join([]string{
-		titleStyle.Render("connect to " + m.connDevice.Name),
-		subtitleStyle.Render("namespace " + m.nsName),
+		m.pctx.Styles.Title.Render("connect to " + m.connDevice.Name),
+		m.pctx.Styles.Subtitle.Render("namespace " + m.nsName),
 		"",
 		"OS user on the device:",
 		m.userInput.View(),
-		"",
-		hintStyle.Render("enter to connect · esc to cancel"),
 	}, "\n")
 }
 
@@ -420,7 +342,7 @@ func (m devicesModel) noticeView() string {
 		return ""
 	}
 
-	return "\n" + errorStyle.Render(m.connErr)
+	return "\n" + m.pctx.Styles.Error.Render(m.connErr)
 }
 
 func deviceRow(d shellhub.Device) table.Row {

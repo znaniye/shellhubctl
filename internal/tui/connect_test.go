@@ -44,7 +44,7 @@ func TestConnectStatesFillTheScreen(t *testing.T) {
 
 	for name, apply := range states {
 		for _, size := range sizes {
-			m := layoutModel(t, screenDevices)
+			m := layoutModel(t, screenDashboard)
 			m, _ = updateModel(t, m, size)
 			apply(&m.devices)
 
@@ -56,7 +56,7 @@ func TestConnectStatesFillTheScreen(t *testing.T) {
 }
 
 func TestNoticeKeepsTheTableVisible(t *testing.T) {
-	m := layoutModel(t, screenDevices)
+	m := layoutModel(t, screenDashboard)
 	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 24})
 
 	before := m.devices.tableHeight()

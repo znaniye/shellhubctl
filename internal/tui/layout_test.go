@@ -7,6 +7,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -22,91 +24,106 @@ func stripANSI(s string) string {
 func layoutModel(t *testing.T, s screen) model {
 	t.Helper()
 
-	ctx := context.Background()
+	pctx := newProgramContext(context.Background(), Options{})
 
 	m := model{
-		ctx:    ctx,
-		screen: s,
-		width:  defaultWidth,
-		height: defaultHeight,
-		login:  newLoginModel(ctx, nil, nil),
+		pctx:    pctx,
+		screen:  s,
+		help:    help.New(),
+		spinner: spinner.New(spinner.WithSpinner(spinner.Dot)),
+		login:   newLoginModel(pctx),
+		namespaces: []shellhub.Namespace{
+			{Name: "alpha", TenantID: "t-1", DevicesAcceptedCount: 2},
+			{Name: "beta", TenantID: "t-2", DevicesAcceptedCount: 7},
+		},
 	}
 
-	m.namespaces = newNamespacesModel(ctx, nil, nil, "alice", m.width, m.height)
-	m.namespaces.loading = false
-	m.namespaces.setNamespaces([]shellhub.Namespace{
-		{Name: "alpha", TenantID: "t-1", DevicesAcceptedCount: 2},
-		{Name: "beta", TenantID: "t-2", DevicesAcceptedCount: 7},
-	})
-
-	m.devices = newDevicesModel(ctx, nil, nil, "alpha", m.width, m.height)
+	m.devices = newDevicesModel(pctx, "alpha")
 	m.devices.loading = false
+	m.hasDevices = true
 	m.devices.setDevices([]shellhub.Device{
 		{UID: "d-1", Name: "dev1", Status: "accepted", Online: true},
 		{UID: "d-2", Name: "dev2", Status: "accepted"},
 	}, 2)
 
+	m.layout()
+
 	return m
 }
 
-func TestFrameAnchorsFooterAtTheBottom(t *testing.T) {
-	got := frame("title\nbody", "\nhelp", 0, 6)
+func renderContext(t *testing.T, width, height int) *ProgramContext {
+	t.Helper()
 
-	want := "title\nbody\n\n\n\nhelp"
-	if got != want {
-		t.Fatalf("frame = %q, want %q", got, want)
+	pctx := newProgramContext(context.Background(), Options{})
+	pctx.SetSize(width, height)
+
+	return pctx
+}
+
+func TestRenderAnchorsTheFooterAtTheBottom(t *testing.T) {
+	lines := strings.Split(renderContext(t, 20, 6).render("title", "body", "help"), "\n")
+
+	if len(lines) != 6 {
+		t.Fatalf("render produced %d lines, want 6", len(lines))
+	}
+
+	if !strings.Contains(lines[0], "title") {
+		t.Errorf("first line = %q, want the header", lines[0])
+	}
+
+	if !strings.Contains(lines[1], "body") {
+		t.Errorf("second line = %q, want the body", lines[1])
+	}
+
+	if !strings.Contains(lines[5], "help") {
+		t.Errorf("last line = %q, want the footer", lines[5])
 	}
 }
 
-func TestFrameKeepsContentAtTheTop(t *testing.T) {
-	lines := strings.Split(frame("title", "help", 0, 10), "\n")
-
-	if len(lines) != 10 {
-		t.Fatalf("frame produced %d lines, want 10", len(lines))
-	}
-
-	if lines[0] != "title" {
-		t.Errorf("first line = %q, want title", lines[0])
-	}
-
-	if lines[9] != "help" {
-		t.Errorf("last line = %q, want help", lines[9])
+func TestRenderIndentsEveryLine(t *testing.T) {
+	for _, line := range strings.Split(renderContext(t, 20, 4).render("title", "body", "help"), "\n") {
+		if !strings.HasPrefix(line, strings.Repeat(" ", contentHorizontalPadding)) {
+			t.Errorf("line %q is not indented", line)
+		}
 	}
 }
 
-func TestFrameTruncatesOverflowingContent(t *testing.T) {
-	content := strings.Join([]string{"a", "b", "c", "d", "e"}, "\n")
+func TestRenderTruncatesOverflowingContent(t *testing.T) {
+	body := strings.Join([]string{"a", "b", "c", "d", "e"}, "\n")
 
-	got := frame(content, "help", 0, 3)
+	lines := strings.Split(renderContext(t, 20, 4).render("title", body, "help"), "\n")
 
-	want := "a\nb\nhelp"
-	if got != want {
-		t.Fatalf("frame = %q, want %q", got, want)
+	if len(lines) != 4 {
+		t.Fatalf("render produced %d lines, want 4", len(lines))
+	}
+
+	if !strings.Contains(lines[3], "help") {
+		t.Errorf("last line = %q, want the footer to survive the overflow", lines[3])
+	}
+
+	if strings.Contains(stripANSI(lines[2]), "c") {
+		t.Errorf("third line = %q, want the body cut at the footer", lines[2])
 	}
 }
 
-func TestFrameKeepsFooterWhenTallerThanScreen(t *testing.T) {
-	got := frame("body", "one\ntwo\nthree", 0, 2)
+func TestRenderClampsEveryLineToTheWidth(t *testing.T) {
+	pctx := renderContext(t, 10, 3)
 
-	want := "two\nthree"
-	if got != want {
-		t.Fatalf("frame = %q, want %q", got, want)
+	view := pctx.render("a much longer header", "a much longer body", "a much longer footer")
+
+	for i, line := range strings.Split(view, "\n") {
+		if got := utf8.RuneCountInString(stripANSI(line)); got > 10 {
+			t.Errorf("line %d spans %d columns, want at most 10", i, got)
+		}
 	}
 }
 
-func TestFrameClampsEveryLineToTheWidth(t *testing.T) {
-	got := frame("short\nmuch longer line", "help bar overflowing", 6, 3)
-
-	want := "short\nmuch l\nhelp b"
-	if got != want {
-		t.Fatalf("frame = %q, want %q", got, want)
-	}
-}
-
-func TestFrameKeepsStyledTextWithinTheWidth(t *testing.T) {
+func TestRenderKeepsStyledTextWithinTheWidth(t *testing.T) {
 	styled := lipgloss.NewStyle().Bold(true).Render("hello world")
 
-	for _, line := range strings.Split(frame(styled, "", 5, 2), "\n") {
+	view := renderContext(t, 5, 3).render(styled, styled, styled)
+
+	for _, line := range strings.Split(view, "\n") {
 		if got := lipgloss.Width(line); got > 5 {
 			t.Errorf("line %q spans %d columns, want at most 5", stripANSI(line), got)
 		}
@@ -117,11 +134,9 @@ func TestViewFillsTheScreenAndAnchorsHelp(t *testing.T) {
 	screens := []struct {
 		name   string
 		screen screen
-		title  string
 	}{
-		{name: "login", screen: screenLogin, title: "shellhubctl"},
-		{name: "namespaces", screen: screenNamespaces, title: "namespaces"},
-		{name: "devices", screen: screenDevices, title: "devices"},
+		{name: "login", screen: screenLogin},
+		{name: "dashboard", screen: screenDashboard},
 	}
 
 	sizes := []tea.WindowSizeMsg{
@@ -142,8 +157,8 @@ func TestViewFillsTheScreenAndAnchorsHelp(t *testing.T) {
 					t.Fatalf("height %d: view has %d lines, want %d", size.Height, len(lines), size.Height)
 				}
 
-				if first := stripANSI(lines[0]); !strings.Contains(first, sc.title) {
-					t.Errorf("height %d: first line = %q, want the %q title", size.Height, first, sc.title)
+				if first := stripANSI(lines[0]); !strings.Contains(first, "shellhubctl") {
+					t.Errorf("height %d: first line = %q, want the brand", size.Height, first)
 				}
 
 				if last := stripANSI(lines[len(lines)-1]); !strings.Contains(last, "quit") {
@@ -160,40 +175,77 @@ func TestViewFillsTheScreenAndAnchorsHelp(t *testing.T) {
 	}
 }
 
+func TestDashboardShowsTheNamespaceTabs(t *testing.T) {
+	m := layoutModel(t, screenDashboard)
+
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 24})
+
+	tabs := stripANSI(strings.Split(m.View(), "\n")[1])
+	for _, want := range []string{"alpha", "beta"} {
+		if !strings.Contains(tabs, want) {
+			t.Errorf("tab row = %q, want it to list %q", tabs, want)
+		}
+	}
+}
+
+func TestTabsNeverOverflowTheWidth(t *testing.T) {
+	m := layoutModel(t, screenDashboard)
+
+	m.namespaces = nil
+	for i := range 40 {
+		m.namespaces = append(m.namespaces, shellhub.Namespace{
+			Name:                 strings.Repeat("namespace", 2) + string(rune('a'+i%26)),
+			DevicesAcceptedCount: i,
+		})
+	}
+
+	for _, current := range []int{0, 17, 39} {
+		m.current = current
+
+		m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 24})
+
+		if got := lipgloss.Width(m.tabsView()); got > m.pctx.MainContentWidth {
+			t.Errorf("current %d: tab row spans %d columns, want at most %d",
+				current, got, m.pctx.MainContentWidth)
+		}
+
+		if !strings.Contains(stripANSI(m.tabsView()), m.namespaces[current].Name) {
+			t.Errorf("current %d: tab row dropped the active namespace", current)
+		}
+	}
+}
+
 func TestWindowSizeReachesEveryScreen(t *testing.T) {
-	m := layoutModel(t, screenNamespaces)
+	m := layoutModel(t, screenDashboard)
 
 	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 123, Height: 45})
 
-	if m.width != 123 || m.height != 45 {
-		t.Fatalf("model size = %dx%d, want 123x45", m.width, m.height)
+	if m.pctx.ScreenWidth != 123 || m.pctx.ScreenHeight != 45 {
+		t.Fatalf("context size = %dx%d, want 123x45", m.pctx.ScreenWidth, m.pctx.ScreenHeight)
 	}
 
-	if m.login.width != 123 || m.login.height != 45 {
-		t.Errorf("login size = %dx%d, want 123x45", m.login.width, m.login.height)
+	for name, sub := range map[string]*ProgramContext{
+		"login":   m.login.pctx,
+		"devices": m.devices.pctx,
+	} {
+		if sub != m.pctx {
+			t.Errorf("%s holds a different context than the root model", name)
+		}
 	}
 
-	if m.namespaces.width != 123 || m.namespaces.height != 45 {
-		t.Errorf("namespaces size = %dx%d, want 123x45", m.namespaces.width, m.namespaces.height)
-	}
-
-	if m.devices.width != 123 || m.devices.height != 45 {
-		t.Errorf("devices size = %dx%d, want 123x45", m.devices.width, m.devices.height)
-	}
-
-	if got := m.namespaces.list.Height(); got != m.namespaces.listHeight() {
-		t.Errorf("list height = %d, want %d", got, m.namespaces.listHeight())
+	if got := m.pctx.BodyHeight; got != 45-headerHeight-footerHeight {
+		t.Errorf("body height = %d, want %d", got, 45-headerHeight-footerHeight)
 	}
 }
 
 func TestTableFollowsTheAvailableWidth(t *testing.T) {
-	m := layoutModel(t, screenDevices)
+	m := layoutModel(t, screenDashboard)
 
 	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
 
 	header := stripANSI(strings.Split(m.devices.table.View(), "\n")[0])
-	if got := utf8.RuneCountInString(header); got != 120 {
-		t.Errorf("table header spans %d columns, want 120", got)
+	if got := utf8.RuneCountInString(header); got != m.pctx.MainContentWidth {
+		t.Errorf("table header spans %d columns, want %d", got, m.pctx.MainContentWidth)
 	}
 
 	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 30, Height: 24})
@@ -204,9 +256,9 @@ func TestTableFollowsTheAvailableWidth(t *testing.T) {
 }
 
 func TestTableFitsTheAvailableHeight(t *testing.T) {
-	m := layoutModel(t, screenDevices)
+	m := layoutModel(t, screenDashboard)
 
-	for _, height := range []int{24, 50, 6} {
+	for _, height := range []int{24, 50, 8} {
 		m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: height})
 
 		rendered := lipgloss.Height(m.devices.table.View())
@@ -219,7 +271,7 @@ func TestTableFitsTheAvailableHeight(t *testing.T) {
 func devicesWithOS(t *testing.T) model {
 	t.Helper()
 
-	m := layoutModel(t, screenDevices)
+	m := layoutModel(t, screenDashboard)
 	m.devices.setDevices([]shellhub.Device{
 		{UID: "d-1", Name: "dev1", Status: "accepted", Online: true, Info: shellhub.DeviceInfo{
 			PrettyName: "Ubuntu 22.04.3 LTS", Arch: "x86_64",
@@ -266,7 +318,9 @@ func TestTableSpansTheWidthWhateverTheContent(t *testing.T) {
 		floor += col.Width + tableCellPadding
 	}
 
-	for _, width := range []int{floor, floor + 20, floor + 60, floor + 100} {
+	for _, content := range []int{floor, floor + 20, floor + 60, floor + 100} {
+		width := content + contentHorizontalPadding*2
+
 		m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 24})
 
 		total := 0
@@ -274,12 +328,12 @@ func TestTableSpansTheWidthWhateverTheContent(t *testing.T) {
 			total += col.Width + tableCellPadding
 		}
 
-		if total != width {
-			t.Errorf("width %d: columns span %d, want %d", width, total, width)
+		if total != content {
+			t.Errorf("width %d: columns span %d, want %d", width, total, content)
 		}
 
 		header := stripANSI(strings.Split(m.devices.table.View(), "\n")[0])
-		if got := utf8.RuneCountInString(header); got != width {
+		if got := utf8.RuneCountInString(header); got != content {
 			t.Errorf("width %d: header spans %d columns", width, got)
 		}
 	}
@@ -296,7 +350,7 @@ func TestTableSpansTheWidthWhateverTheContent(t *testing.T) {
 func devicesWithOSLabel(t *testing.T, pretty, arch string) model {
 	t.Helper()
 
-	m := layoutModel(t, screenDevices)
+	m := layoutModel(t, screenDashboard)
 	m.devices.setDevices([]shellhub.Device{
 		{UID: "d-1", Name: "dev1", Status: "accepted", Online: true, Info: shellhub.DeviceInfo{
 			PrettyName: pretty, Arch: arch,
@@ -370,8 +424,8 @@ func TestLastColumnEndsAtTheRightEdge(t *testing.T) {
 
 	rows := strings.Split(stripANSI(m.devices.table.View()), "\n")
 	for i, row := range rows {
-		if got := utf8.RuneCountInString(row); got != 120 {
-			t.Errorf("row %d spans %d columns, want 120", i, got)
+		if got := utf8.RuneCountInString(row); got != m.pctx.MainContentWidth {
+			t.Errorf("row %d spans %d columns, want %d", i, got, m.pctx.MainContentWidth)
 		}
 	}
 }
