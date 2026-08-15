@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -43,10 +45,26 @@ func switchNamespaceCmd(ctx context.Context, c *shellhub.Client, store *auth.Sto
 
 func listDevicesCmd(ctx context.Context, c *shellhub.Client) tea.Cmd {
 	return func() tea.Msg {
-		devices, total, err := c.ListDevices(ctx, shellhub.DeviceListOptions{PerPage: 100})
+		devices, total, err := c.ListDevices(ctx, shellhub.DeviceListOptions{
+			PerPage: 100,
+			SortBy:  "name",
+			OrderBy: "asc",
+		})
 		if err != nil {
 			return errMsg{err: err}
 		}
+
+		slices.SortStableFunc(devices, func(a, b shellhub.Device) int {
+			if a.Online != b.Online {
+				if a.Online {
+					return -1
+				}
+
+				return 1
+			}
+
+			return strings.Compare(a.Name, b.Name)
+		})
 
 		return devicesLoadedMsg{devices: devices, total: total}
 	}
