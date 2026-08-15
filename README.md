@@ -2,6 +2,8 @@
 
 A terminal UI and a JSON-emitting CLI for [ShellHub](https://shellhub.io).
 
+![shellhubctl](docs/demo.gif)
+
 Two faces, one binary:
 
 - run it with no arguments and you get an interactive TUI — log in, pick a
