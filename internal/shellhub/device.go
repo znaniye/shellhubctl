@@ -84,6 +84,44 @@ type DeviceListOptions struct {
 	OrderBy string
 }
 
+const maxDevicePages = 1000
+
+func (c *Client) ListAllDevices(ctx context.Context, opts DeviceListOptions) ([]Device, error) {
+	perPage := normalizePerPage(opts.PerPage)
+
+	all := make([]Device, 0)
+	total := 0
+	page := 1
+
+	for i := 0; i < maxDevicePages; i++ {
+		opts.Page = page
+		opts.PerPage = perPage
+
+		devices, count, err := c.ListDevices(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+
+		all = append(all, devices...)
+
+		if total == 0 {
+			total = count
+		}
+
+		if len(devices) < perPage {
+			break
+		}
+
+		if total > 0 && len(all) >= total {
+			break
+		}
+
+		page++
+	}
+
+	return all, nil
+}
+
 func (c *Client) ListDevices(ctx context.Context, opts DeviceListOptions) ([]Device, int, error) {
 	status := opts.Status
 	if status == "" {

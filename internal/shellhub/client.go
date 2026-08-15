@@ -11,9 +11,10 @@ import (
 )
 
 type Client struct {
-	base  *url.URL
-	http  *http.Client
-	token string
+	base   *url.URL
+	http   *http.Client
+	token  string
+	apiKey string
 }
 
 type Option func(*Client)
@@ -44,6 +45,10 @@ func WithHTTPClient(h *http.Client) Option {
 
 func (c *Client) SetToken(token string) {
 	c.token = token
+}
+
+func (c *Client) SetAPIKey(key string) {
+	c.apiKey = key
 }
 
 func (c *Client) Token() string {
@@ -155,8 +160,12 @@ func (c *Client) doRequest(ctx context.Context, method, path string, query url.V
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	if auth && c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+	if auth {
+		if c.apiKey != "" {
+			req.Header.Set("X-API-Key", c.apiKey)
+		} else if c.token != "" {
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
 	}
 
 	resp, err := c.http.Do(req)

@@ -613,6 +613,152 @@ func TestSwitchNamespace(t *testing.T) {
 	}
 }
 
+func TestDoRequestAPIKey(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		gotAPIKey string
+		gotAuth   string
+	)
+
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotAPIKey = r.Header.Get("X-API-Key")
+		gotAuth = r.Header.Get("Authorization")
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		writeBody(w, `[]`)
+	})
+
+	c.SetAPIKey("key-1")
+
+	if _, _, err := c.ListDevices(context.Background(), DeviceListOptions{}); err != nil {
+		t.Fatalf("ListDevices: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if gotAPIKey != "key-1" {
+		t.Errorf("X-API-Key = %q, want key-1", gotAPIKey)
+	}
+
+	if gotAuth != "" {
+		t.Errorf("Authorization = %q, want empty", gotAuth)
+	}
+}
+
+func TestDoRequestTokenOnly(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		gotAPIKey string
+		gotAuth   string
+	)
+
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotAPIKey = r.Header.Get("X-API-Key")
+		gotAuth = r.Header.Get("Authorization")
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		writeBody(w, `[]`)
+	})
+
+	c.SetToken("tok")
+
+	if _, _, err := c.ListDevices(context.Background(), DeviceListOptions{}); err != nil {
+		t.Fatalf("ListDevices: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if gotAuth != "Bearer tok" {
+		t.Errorf("Authorization = %q, want Bearer tok", gotAuth)
+	}
+
+	if gotAPIKey != "" {
+		t.Errorf("X-API-Key = %q, want empty", gotAPIKey)
+	}
+}
+
+func TestDoRequestAPIKeyPrecedence(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		gotAPIKey string
+		gotAuth   string
+	)
+
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotAPIKey = r.Header.Get("X-API-Key")
+		gotAuth = r.Header.Get("Authorization")
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		writeBody(w, `[]`)
+	})
+
+	c.SetToken("tok")
+	c.SetAPIKey("key-1")
+
+	if _, _, err := c.ListDevices(context.Background(), DeviceListOptions{}); err != nil {
+		t.Fatalf("ListDevices: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if gotAPIKey != "key-1" {
+		t.Errorf("X-API-Key = %q, want key-1", gotAPIKey)
+	}
+
+	if gotAuth != "" {
+		t.Errorf("Authorization = %q, want empty", gotAuth)
+	}
+}
+
+func TestDoAnonymousSendsNoCredentials(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		gotAPIKey string
+		gotAuth   string
+	)
+
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/info" {
+			t.Errorf("path = %q, want /info", r.URL.Path)
+		}
+
+		mu.Lock()
+		gotAPIKey = r.Header.Get("X-API-Key")
+		gotAuth = r.Header.Get("Authorization")
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		writeBody(w, `{"version":"v0.29.0","endpoints":{"api":"https://api.example.com","ssh":"ssh.example.com:22"},"setup":true,"authentication":{"local":true}}`)
+	})
+
+	c.SetToken("tok")
+	c.SetAPIKey("key-1")
+
+	if _, err := c.Info(context.Background()); err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if gotAPIKey != "" {
+		t.Errorf("X-API-Key = %q, want empty", gotAPIKey)
+	}
+
+	if gotAuth != "" {
+		t.Errorf("Authorization = %q, want empty", gotAuth)
+	}
+}
+
 func TestHostDropsTheAPIPort(t *testing.T) {
 	tests := []struct {
 		server string
