@@ -9,7 +9,8 @@ pkgs.buildGoModule {
 
   src = flake;
 
-  vendorHash = "sha256-3yZK7hDeYY7AYnqf1WalpG8P0At3FRZMaPloQctp5ac=";
+  vendorHash = "sha256-BqhwyKE8V547sC6DYuPmr1+lsOmkqkekssAtpAr7dhw=";
+  goSum = flake;
 
   env.CGO_ENABLED = 0;
 
